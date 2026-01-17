@@ -78,6 +78,10 @@ pub struct BuildArgs {
     #[arg(long)]
     pub force: bool,
 
+    /// Merge multiple M4B files even without detected naming pattern
+    #[arg(long)]
+    pub merge_m4b: bool,
+
     /// Normalize existing M4B files (fix metadata)
     #[arg(long)]
     pub normalize: bool,
