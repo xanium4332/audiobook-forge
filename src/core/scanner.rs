@@ -145,18 +145,26 @@ impl Scanner {
         // Classify the book
         book.classify();
 
-        // Only return if it's a valid audiobook folder (Cases A, B, or C)
-        if matches!(book.case, BookCase::A | BookCase::B | BookCase::C) {
+        // Only return if it's a valid audiobook folder (Cases A, B, C, or E)
+        if matches!(book.case, BookCase::A | BookCase::B | BookCase::C | BookCase::E) {
             // Sort MP3 files naturally
             crate::utils::natural_sort(&mut book.mp3_files);
 
+            // Sort M4B files by part number for Case E
+            if book.case == BookCase::E {
+                crate::utils::sort_by_part_number(&mut book.m4b_files);
+            }
+
             // Auto-extract embedded cover art if enabled and no standalone cover found
-            if self.auto_extract_cover
-                && book.cover_file.is_none()
-                && !book.mp3_files.is_empty()
-            {
-                // Try extracting from first audio file (mp3_files includes both MP3 and M4A)
-                let first_audio = book.mp3_files.first();
+            if self.auto_extract_cover && book.cover_file.is_none() {
+                // Try extracting from first audio file
+                let first_audio = if !book.mp3_files.is_empty() {
+                    book.mp3_files.first()
+                } else if !book.m4b_files.is_empty() {
+                    book.m4b_files.first()
+                } else {
+                    None
+                };
 
                 if let Some(audio_file) = first_audio {
                     // Create temp file for extracted cover
