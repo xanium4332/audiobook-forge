@@ -1,8 +1,8 @@
 //! CLI command handlers
 
 use crate::cli::commands::{BuildArgs, ConfigCommands, OrganizeArgs, MetadataCommands, MatchArgs};
-use crate::core::{Analyzer, BatchProcessor, Organizer, RetryConfig, Scanner};
-use crate::models::{Config, AudibleRegion, CurrentMetadata, MetadataSource};
+use crate::core::{Analyzer, BatchProcessor, M4bMerger, Organizer, RetryConfig, Scanner};
+use crate::models::{BookCase, Config, AudibleRegion, CurrentMetadata, MetadataSource};
 use crate::utils::{ConfigManager, DependencyChecker, AudibleCache, scoring, extraction};
 use crate::audio::{AacEncoder, AudibleClient, detect_asin};
 use crate::ui::{prompt_match_selection, prompt_manual_metadata, prompt_custom_search, UserChoice};
@@ -182,12 +182,28 @@ pub async fn handle_build(args: BuildArgs, config: Config) -> Result<()> {
 
     // Filter by skip_existing if configured
     if config.processing.skip_existing && !args.force {
-        book_folders.retain(|b| b.m4b_files.is_empty());
+        book_folders.retain(|b| {
+            // Keep if no M4B files OR if it's a mergeable case (E)
+            b.m4b_files.is_empty() || b.case == BookCase::E
+        });
         println!(
             "{} After filtering existing: {} audiobook(s)",
             style("→").cyan(),
             style(book_folders.len()).cyan()
         );
+    }
+
+    // Handle --merge-m4b flag: force Case E for multi-M4B folders
+    if args.merge_m4b {
+        for book in &mut book_folders {
+            if book.m4b_files.len() > 1 && book.case == BookCase::C {
+                tracing::info!(
+                    "Forcing merge for {} (--merge-m4b flag)",
+                    book.name
+                );
+                book.case = BookCase::E;
+            }
+        }
     }
 
     if book_folders.is_empty() {
@@ -418,8 +434,56 @@ pub async fn handle_build(args: BuildArgs, config: Config) -> Result<()> {
         retry_config,
     );
 
-    // Process batch
-    println!("\n{} Processing {} audiobook(s)...\n", style("→").cyan(), book_folders.len());
+    // Separate Case E (M4B merge) from other cases
+    let (merge_books, convert_books): (Vec<_>, Vec<_>) = book_folders
+        .into_iter()
+        .partition(|b| b.case == BookCase::E);
+
+    // Process M4B merges
+    if !merge_books.is_empty() {
+        println!(
+            "\n{} Merging {} M4B audiobook(s)...",
+            style("→").cyan(),
+            style(merge_books.len()).cyan()
+        );
+
+        let merger = M4bMerger::with_options(args.keep_temp)?;
+
+        for book in merge_books {
+            println!(
+                "  {} {} ({} files)",
+                style("→").cyan(),
+                style(&book.name).yellow(),
+                book.m4b_files.len()
+            );
+
+            match merger.merge_m4b_files(&book, &output_dir).await {
+                Ok(output_path) => {
+                    println!(
+                        "  {} Merged: {}",
+                        style("✓").green(),
+                        output_path.display()
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        "  {} Failed to merge {}: {}",
+                        style("✗").red(),
+                        book.name,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // Continue with regular conversion for remaining books
+    let book_folders = convert_books;
+
+    // Process batch (regular conversions)
+    if !book_folders.is_empty() {
+        println!("\n{} Processing {} audiobook(s)...\n", style("→").cyan(), book_folders.len());
+    }
 
     let results = batch_processor
         .process_batch(
