@@ -55,7 +55,7 @@ When downloading audiobooks, they often come as **multiple separate MP3 files** 
 - **🎧 Audible Integration** (v2.2.0): Fetch comprehensive metadata from Audible's catalog
 - **🔄 Batch Operations**: Process entire libraries with a single command
 - **⚡ Copy Mode**: Ultra-fast concatenation without re-encoding when possible
-- **🔗 M4B Merge** (v2.10.0): Combine multiple M4B files into one without re-encoding
+- **🔗 M4B Merge** (v2.9.1): Combine multiple M4B files into one without re-encoding
 - **🔁 Error Recovery**: Automatic retry with configurable settings
 - **📊 Progress Tracking**: Real-time progress with ETA calculation
 - **⚙️ Configuration**: Comprehensive YAML-based configuration with CLI overrides
@@ -189,7 +189,7 @@ audiobook-forge metadata enrich --file "Book.m4b" \
 
 **📖 Complete usage guide**: See [docs/usage.md](docs/usage.md)
 
-### M4B Merge (v2.10.0) 🆕
+### M4B Merge (v2.9.1) 🆕
 
 Combine multiple M4B files into a single file **without re-encoding**:
 
