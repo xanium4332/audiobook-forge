@@ -409,6 +409,47 @@ fn merge_keep_timestamps(existing: &[Chapter], new: &[Chapter]) -> Result<Vec<Ch
     Ok(merged)
 }
 
+/// Merge chapter lists from multiple M4B files with adjusted timestamps
+///
+/// Takes a slice of chapter lists (one per M4B file) and combines them into
+/// a single list with correctly offset timestamps. Each subsequent file's
+/// chapters are offset by the cumulative duration of previous files.
+pub fn merge_chapter_lists(chapter_lists: &[Vec<Chapter>]) -> Vec<Chapter> {
+    if chapter_lists.is_empty() {
+        return Vec::new();
+    }
+
+    if chapter_lists.len() == 1 {
+        return chapter_lists[0].clone();
+    }
+
+    let mut merged = Vec::new();
+    let mut cumulative_offset: u64 = 0;
+    let mut chapter_number: u32 = 1;
+
+    for chapters in chapter_lists {
+        for chapter in chapters {
+            let adjusted_start = chapter.start_time_ms + cumulative_offset;
+            let adjusted_end = chapter.end_time_ms + cumulative_offset;
+
+            merged.push(Chapter::new(
+                chapter_number,
+                chapter.title.clone(),
+                adjusted_start,
+                adjusted_end,
+            ));
+            chapter_number += 1;
+        }
+
+        // Update cumulative offset based on the last chapter's end time
+        if let Some(last) = chapters.last() {
+            cumulative_offset += last.end_time_ms;
+        }
+    }
+
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,5 +651,58 @@ mod tests {
         assert_eq!(parse_ffprobe_time("3661.250"), Some(3_661_250)); // 1h 1m 1.25s
         assert_eq!(parse_ffprobe_time("invalid"), None);
         assert_eq!(parse_ffprobe_time(""), None);
+    }
+
+    #[test]
+    fn test_merge_chapter_lists_with_offset() {
+        let chapters1 = vec![
+            Chapter::new(1, "Part1 Ch1".to_string(), 0, 60_000),
+            Chapter::new(2, "Part1 Ch2".to_string(), 60_000, 120_000),
+        ];
+        let chapters2 = vec![
+            Chapter::new(1, "Part2 Ch1".to_string(), 0, 45_000),
+            Chapter::new(2, "Part2 Ch2".to_string(), 45_000, 90_000),
+        ];
+
+        let merged = merge_chapter_lists(&[chapters1, chapters2]);
+
+        assert_eq!(merged.len(), 4);
+        // First file's chapters unchanged
+        assert_eq!(merged[0].title, "Part1 Ch1");
+        assert_eq!(merged[0].start_time_ms, 0);
+        assert_eq!(merged[0].end_time_ms, 60_000);
+        assert_eq!(merged[1].title, "Part1 Ch2");
+        assert_eq!(merged[1].start_time_ms, 60_000);
+        assert_eq!(merged[1].end_time_ms, 120_000);
+        // Second file's chapters offset by part 1 duration (120_000)
+        assert_eq!(merged[2].title, "Part2 Ch1");
+        assert_eq!(merged[2].start_time_ms, 120_000);
+        assert_eq!(merged[2].end_time_ms, 165_000); // 120_000 + 45_000
+        assert_eq!(merged[3].title, "Part2 Ch2");
+        assert_eq!(merged[3].start_time_ms, 165_000);
+        assert_eq!(merged[3].end_time_ms, 210_000); // 120_000 + 90_000
+        // Renumbered sequentially
+        assert_eq!(merged[0].number, 1);
+        assert_eq!(merged[1].number, 2);
+        assert_eq!(merged[2].number, 3);
+        assert_eq!(merged[3].number, 4);
+    }
+
+    #[test]
+    fn test_merge_chapter_lists_empty() {
+        let result = merge_chapter_lists(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_merge_chapter_lists_single() {
+        let chapters = vec![
+            Chapter::new(1, "Ch1".to_string(), 0, 1000),
+            Chapter::new(2, "Ch2".to_string(), 1000, 2000),
+        ];
+        let result = merge_chapter_lists(&[chapters.clone()]);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].title, "Ch1");
+        assert_eq!(result[1].title, "Ch2");
     }
 }
